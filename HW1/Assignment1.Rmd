@@ -1,0 +1,323 @@
+---
+title: "Assignment 1"
+author: "Carlton Washburn"
+date: "August 5, 2015"
+output: pdf_document
+---
+#Exploratory Analysis
+Loading of the dataset and libraries.
+```{r}
+vote.data = read.csv("georgia2000.csv")
+library(mosaic)
+library(ggplot2)
+```
+For the exploratory analysis, I looked to see if there was a connection between the number of votes that were not counted, and the voting conditions and demographics of the voting county. The first thing done was to add several columns to the dataset to help with the exploratory analysis.
+I added a column which shows the number of ballots that went uncounted as disparity.
+```{r}
+vote.data['disparity'] = vote.data$ballots - vote.data$votes
+```
+I also added columns which recorded poor and atlanta as string values.
+```{r}
+vote.data$ispoor = 'p'
+for (i in c(1:159)) {
+  if (vote.data$poor[i] == 1) {
+    vote.data$ispoor[i] = 'poor'
+  }
+  else {
+    vote.data$ispoor[i] = 'not poor'
+  }
+}
+vote.data$isatlanta = 'n'
+for (i in c(1:159)){
+  if (vote.data$atlanta[i] == 1) {
+    vote.data$isatlanta[i] = 'atlanta'
+  }
+  else {
+    vote.data$isatlanta[i] = 'not atlanta'
+  }
+}
+```
+Finally, I added a column which recorded whether the majority of voters in the county voted for Gore or Bush in a column labeled candidate.
+```{r}
+vote.data$candidate = 'p'
+for (i in c(1:nrow(vote.data))){
+  if (vote.data$gore[i] > vote.data$bush[i]) {
+    vote.data$candidate[i] = 'gore'
+  }
+  else if (vote.data$bush[i] > vote.data$gore[i]) {
+    vote.data$candidate[i] = 'bush'
+  }
+}
+```
+
+After adding the columns to the dataset, I plotted several boxplots versus the number of uncounted ballots to see if any of the categorical variables displayed a higher number of uncounted ballots for any category.
+
+First is whether the majority of voters voted for Bush or Gore and the number of uncounted votes.
+```{r}
+bwplot(vote.data$disparity ~ vote.data$candidate)
+```
+
+In this we see that while both counties that voted Bush and Gore had counties with 1000 plus uncounted votes but the largest disparity occured in counties which voted for Gore.
+
+In this boxplot we looked at number of uncounted votes and whether the county was considered poor or not.
+```{r}
+bwplot(vote.data$disparity ~ vote.data$ispoor)
+```
+
+We see that the counties with highest number of uncounted votes appear to bve from counties which are marked as not poor.
+
+In this next one we examine whether the county is in Atlanta or not and number of uncounted votes.
+```{r}
+bwplot(vote.data$disparity ~ vote.data$isatlanta)
+```
+
+We see the counties with the highest number of uncounted votes were in Atlanta, and that counties not in Atlanta generally have a lower number of uncounted votes, but also has several counties with a thousand plus uncounted votes.
+
+Finally we look at equipment versus the number of uncounted votes.
+```{r}
+bwplot(vote.data$disparity ~ vote.data$equip)
+```
+
+From this we see that counties that used Punch for equipment saw the some of the highest number of uncounted votes and that optical equipment also had several counties that had large numbers of uncounted votes.
+
+So, know we look at percent African American versus the number of uncounted votes.
+```{r}
+plot(vote.data$disparity ~ vote.data$perAA)
+```
+
+Here we see that the counties with the highest number of uncounted votes, came from counties with over 35 percent African American Populations.
+
+So to check to see whether counties with high percentage of African American voters are using equipment that results in a high number of votes not being counted we examine percent African American versus the Equipment.
+```{r}
+bwplot(vote.data$perAA ~ vote.data$equip)
+```
+
+Here the box plot suggests that punch equipment is found in counties with high percent of African Americans, which according to our earlier box plot results in a higher number of uncounted votes.
+
+#Bootstrapping
+Given a $100000 to invest in some combination of S&P500, US Treasury Bonds, Investment Grade Corporate Bonds, Emerging Market Equities, and Real Estate what are the proportions that would result in a safer and riskier portfolio then just an even split between the five choices. To assess which of the options were risky and which of the options were safer we looked at the mean and staandard deviation of the percentage change in value of the Exchange Traded Funds.
+
+Five years of daily data was downloaded with the following code:
+```{r}
+library(mosaic)
+library(fImport)
+library(foreach)
+
+# Import a few stocks
+mystocks = c("SPY", "TLT", "LQD","EEM","VNQ")
+myprices = yahooSeries(mystocks, from='2010-07-30', to='2015-07-30')
+```
+
+The following function provided by Dr. Scott was used to calculate the daily returns for the different exchange traded funds:
+```{r}
+YahooPricesToReturns = function(series) {
+  mycols = grep('Adj.Close', colnames(series))
+  closingprice = series[,mycols]
+  N = nrow(closingprice)
+  percentreturn = as.data.frame(closingprice[2:N,]) / as.data.frame(closingprice[1:(N-1),]) - 1
+  mynames = strsplit(colnames(percentreturn), '.', fixed=TRUE)
+  mynames = lapply(mynames, function(x) return(paste0(x[1], ".PctReturn")))
+  colnames(percentreturn) = mynames
+  as.matrix(na.omit(percentreturn))
+}
+```
+
+The daily reutrns, mean of the daily return, and the standard deviation of the daily returns were calculated with the following code.
+```{r}
+myreturns = YahooPricesToReturns(myprices)
+summary(myreturns)
+apply(myreturns,2,sd)
+```
+
+As we can see the mean daily percent return for the ETFs range from .007 percent to .06 percent and the standard deviations range .35 percent to 1.37 percent. From this, it was decided the safest ETFs were Investment Grade Corporate Bonds, S&P500, and Treasury Bonds in that order. The riskiest assets were Emerging Market Equities and Real Estate with Emerging Market Equities being the riskiest. So for our safe portfolio we would reccommend 60 percent in Investment Grade Corporate Bonds, 30 percent in S&P500, and 10 percent in US Treasury Bonds. For the risky portfolio we recommend 60 percent in Emerging Market Equities and 40 percent in Real Estate.
+
+In the following code we simulate a many different possible 20 day trading periods to assess what 20 day value at risk at the 5 percent level is:
+```{r}
+n_days = 20
+set.seed(13)
+sim1 = foreach(i=1:5000, .combine='rbind') %do% {
+  totalwealth = 100000
+  weights = c(0.2, 0.2, 0.2, 0.2, 0.2)
+  holdings = weights * totalwealth
+  wealthtracker = rep(0, n_days) # Set up a placeholder to track total wealth
+  for(today in 1:n_days) {
+    return.today = resample(myreturns, 1, orig.ids=FALSE)
+    holdings = holdings + holdings*return.today
+    totalwealth = sum(holdings)
+    wealthtracker[today] = totalwealth
+  }
+  wealthtracker
+}
+quantile(sim1[,n_days], 0.05) - 100000
+```
+
+We see for an evenly split portfolio, there is a five percent chance that the portfolio will lose $3669.58 during the twenty day trading period.
+
+We can see in the following histogram the potential changes in value for the portfolio over a twenty day period:
+```{r}
+hist(sim1[,n_days]- 100000)
+```
+
+We now simulate the trading of the safe portfolio and estimate the value at risk:
+```{r}
+set.seed(13)
+sim1 = foreach(i=1:5000, .combine='rbind') %do% {
+  totalwealth = 100000
+  weights = c(0.3, 0.1, 0.60, 0.0, 0.0)
+  holdings = weights * totalwealth
+  wealthtracker = rep(0, n_days) # Set up a placeholder to track total wealth
+  for(today in 1:n_days) {
+    return.today = resample(myreturns, 1, orig.ids=FALSE)
+    holdings = holdings + holdings*return.today
+    totalwealth = sum(holdings)
+    wealthtracker[today] = totalwealth
+  }
+  wealthtracker
+}
+quantile(sim1[,n_days], 0.05) - 10000
+```
+
+We see for the safe portfolio the value at risk is  around $1903.03. In the following histogram we see the spread of potential gains or losses.
+```{r}
+hist(sim1[,n_days]- 100000)
+```
+
+Finally we look at the risky portfolio and estimate its value at risk:
+```{r}
+set.seed(13)
+sim1 = foreach(i=1:5000, .combine='rbind') %do% {
+  totalwealth = 100000
+  weights = c(0.0, 0.0, 0.0, 0.6, 0.4)
+  holdings = weights * totalwealth
+  wealthtracker = rep(0, n_days) # Set up a placeholder to track total wealth
+  for(today in 1:n_days) {
+    return.today = resample(myreturns, 1, orig.ids=FALSE)
+    holdings = holdings + holdings*return.today
+    totalwealth = sum(holdings)
+    wealthtracker[today] = totalwealth
+  }
+  wealthtracker
+}
+quantile(sim1[,n_days], 0.05) - 100000
+```
+
+We see the value at risk for the risky portfolio is $8124.58. We now look at the spread of possible gains and losses:
+```{r}
+hist(sim1[,n_days]- 100000)
+```
+
+From the spreads we see that while the value at risk is lower for a balanced portfolio and a safe portfolio, the potential gains are also less while the risky portfolio has a greater value at risk, but also has a larger potential for gains.
+
+#Clustering and PCA
+
+In this section we examine a dataset of wine and see if clustering or principle component analysis can predict whether the wine is red or white.
+
+##PCA
+First we do a principle component analysis to see if it can predict the color of the wine.
+
+The following loads in the wine date and libraries need to plot the results:
+```{r}
+library(ggplot2)
+wine.data = read.csv('wine.csv')
+```
+
+We then compute the priciple components using the 11 variables of the wine data.
+```{r}
+wine.data.numeric = wine.data[c(1:11)]
+pr.out = prcomp(wine.data.numeric, scale= TRUE,center = TRUE)
+scores = pr.out$x
+```
+
+We then plot the data with principle component 1 as the x axis and principle component 2 as y axis, and color coded the points as either red wine or white wine.
+```{r}
+qplot(scores[,1], scores[,2], color=wine.data$color, xlab='Component 1', ylab='Component 2')
+```
+
+From the plot we see that principle component 1 is capable of predicitng whether the wine is red or white. Now we check to see if it can show quality with the following plot.
+```{r}
+qplot(scores[,1], scores[,2], color=wine.data$quality, xlab='Component 1', ylab='Component 2')
+```
+
+This plot indicates that the priciple components do not appear to predict the quality of the wine.
+
+##Clustering
+
+Here we use kmeans to see if clustering can predict the color of the wine.
+First we scale the data to prepare it for use in the kmeans alggorithm.
+```{r}
+wine.data.numeric.scaled = scale(wine.data.numeric,center = TRUE, scale = TRUE)
+```
+
+We then run the data through the kmeans algorithm generating two clusters, hopefully one for red wine and the other for white wine.
+```{r}
+wine.cluster = kmeans(wine.data.numeric.scaled,centers = 8, nstart = 50)
+```
+
+We then plot the data points based on the acidity and wine color, with the points color coded based on which cluster they were assigned. 
+```{r}
+qplot(wine.data$fixed.acidity,wine.data$color,col=wine.cluster$cluster)
+```
+
+As we can see the clusters for the most part group white wines together and red wines together indicating that the clustering does predict the color of the wine.
+
+Now we attempt to see if clustering can predict the quality of the wine with 9 clusters, one for each of the quality rating represented in the data.
+```{r}
+wine.cluster = kmeans(wine.data.numeric.scaled,centers = 9, nstart = 50)
+```
+
+Next we plot the data to see if the clusters predict the quality.
+
+```{r}
+qplot(wine.data$fixed.acidity,wine.data$quality,col=wine.cluster$cluster)
+```
+
+From this plot we see that that the clusters do not seem to predict the quality of wine, with each cluster containing wines of many different qualities.
+
+#Market Segmentation
+
+To examine the data and see if there are any associations between the different topics that people tweet about which indicates that people interested in certain topics are also interested in other topics we used clustering with the kmeans algorithm.
+
+First we loaded the data into R
+```{r}
+twitter.data = read.csv('social_marketing.csv')
+```
+
+We then scaled the data and excluded the chatter variable as it was felt that its inclusion in the data was not very informative.
+```{r}
+twitter.scaled = scale(twitter.data[,c(3:37)], center = TRUE, scale = TRUE)
+```
+
+We then used the kmeans algorithm to generate are different groups, in this case we felt 8 clusters was a good amount.
+
+```{r}
+social.cluster = kmeans(twitter.scaled,center = 8, nstart = 50)
+```
+
+We then examined the centers of the clusters to get an idea of what the different generated groups appear to be tweeting about.
+
+```{r}
+social.cluster$centers
+```
+
+From this we see the following:
+
+1. Group One appears to be interested in Film and Movies, Music, and Art.
+
+2. Group Two appears to be primarly be spammers and posters of adult orientated subject material
+
+3. Group Three likes to share photos and is interested in cooking, fashion, and bueaty.
+
+4. Group Four is a group of people that show a general disinterest in most topics and may not be active users of Twitter.
+
+5. Group Five is interested in Health and Nutrtion, Personal Fitness, and the Outdoors.
+
+6. Group Six displays interests in travel, news, politics, computers, and cars.
+
+7. Group Seven displays interests in online gaming, college and university, and playing sports.
+
+8. Group Eight displays interests in sports fandom, food, family, religion, parenting, and school.
+
+From the interests, we can make educated guesses about the members of these groups. For example, we could guess that group seven is made up of college age tweeters.
+
+
+
