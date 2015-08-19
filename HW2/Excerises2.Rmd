@@ -1,0 +1,152 @@
+---
+title: "Exercises 2"
+author: "Carlton Washburn"
+date: "August 15, 2015"
+output: html_document
+---
+```{r,echo = FALSE}
+
+```
+## Flights at ABIA
+```{r,echo = FALSE}
+plane.df = read.csv('ABIA.csv')
+cancelled.flights = plane.df[which(plane.df$Cancelled == 1),]
+```
+
+The first plot we will look at is the the proportion of flights that were cancelled by carrier.
+```{r,echo=FALSE}
+total.counts = table(plane.df$UniqueCarrier)
+cancelled.counts = table(cancelled.flights$UniqueCarrier)
+propofcancelled = cancelled.counts/total.counts
+plot(propofcancelled,xlab = "Carrier",ylab = "Proportion of Filghts Cancelled")
+```
+
+The next two plots we will look at are the Average delay in arrival or departure for every day of the year.
+```{r,echo= FALSE}
+plane.df.date = transform(plane.df,date = interaction(Year,Month,DayofMonth, sep = ' '))
+plane.df.date['date'] = as.Date(plane.df.date$date,"%Y %m  %d")
+
+depart.austin = plane.df.date[which(plane.df$Origin== 'AUS'),]
+arrive.austin = plane.df.date[which(plane.df$Dest == 'AUS'),]
+
+agg.dep = aggregate(depart.austin$DepDelay, by=list(depart.austin$date),FUN=mean,na.rm=TRUE)
+plot(agg.dep,type='l' ,xlab="Date",ylab='Average Departure Delay in minutes')
+lines(agg.dep)
+
+agg.arr = aggregate(arrive.austin$ArrDelay, by = list(arrive.austin$date),FUN=mean,na.rm=TRUE)
+plot(agg.arr, type = 'l',xlab = "Date", ylab = "Average Delay of Arrival in minutes")
+lines(agg.arr)
+
+```
+
+### Author Attribution
+
+In the following section, we try to predict the author of an article based on the words in the article. First we attempt Naive-Bayes.
+
+```{r}
+library(tm)
+readerPlain = function(fname){
+  readPlain(elem=list(content=readLines(fname)), 
+            id=fname, language='en') }
+author_train = Sys.glob('./ReutersC50/C50train/*')
+author_test = Sys.glob('./ReutersC50/C50tests/*')
+author_dirs = c(author_train,author_test)
+file_list = NULL
+labels = NULL
+for(author in author_dirs) {
+  author_name = substring(author, first=23)
+  files_to_add = Sys.glob(paste0(author, '/*.txt'))
+  file_list = append(file_list, files_to_add)
+  labels = append(labels, rep(author_name, length(files_to_add)))
+}
+all_docs = lapply(file_list, readerPlain) 
+names(all_docs) = file_list
+names(all_docs) = sub('.txt', '', names(all_docs))
+
+my_corpus = Corpus(VectorSource(all_docs))
+names(my_corpus) = file_list
+my_corpus = tm_map(my_corpus, content_transformer(tolower)) # make everything lowercase
+my_corpus = tm_map(my_corpus, content_transformer(removeNumbers)) # remove numbers
+my_corpus = tm_map(my_corpus, content_transformer(removePunctuation)) # remove punctuation
+my_corpus = tm_map(my_corpus, content_transformer(stripWhitespace)) ## remove excess white-space
+my_corpus = tm_map(my_corpus, content_transformer(removeWords), stopwords("SMART"))
+
+DTM = DocumentTermMatrix(my_corpus)
+DTM = removeSparseTerms(DTM, 0.975)
+X = as.matrix(DTM)
+authors = levels(as.factor(labels))
+i = 0;
+w = NULL
+smooth_count = 1/nrow(X)
+for (author in authors) {
+  col = NULL
+  train = X[((i*50)+1):((i*50)+50),]
+  col = colSums(train + smooth_count)
+  names(col) = colnames(train)
+  temp = col/sum(col)
+  w = cbind(w,temp)
+  i = i+1
+}
+colnames(w) = authors
+
+fit = matrix(nrow = 2500, ncol = 50)
+test = X[2501:5000,]
+for (i in seq(1:2500)){
+  for ( j in seq(1:50)){
+    fit[i,j] = sum(test[i,]*log(w[,j]))
+  }
+}
+colnames(fit) = authors
+labels_fit = apply(fit,1,which.max)
+author_fit = authors[labels_fit]
+
+good = 0
+for (i in seq(1, 2500)){
+  if (author_fit[i] == labels[2500+i]){
+    good = good + 1
+  }
+}
+good/2500
+```
+
+We get a 52 percent accuracy with naive-bayes. Now lets try to predict the author with principle component analysis and a random forest.
+
+```{r}
+library(randomForest)
+train = X[1:2500,]
+test = X[2501:5000,]
+
+pca = prcomp(train)
+
+test.p = predict(pca,newdata = test)
+
+train.pca = pca$x[,1:100]
+forest = randomForest(train.pca,y = as.factor(labels[1:2500]),ntree = 200)
+
+predicted = predict(forest,test.p,type = 'response')
+good = 0
+for (i in seq(1:2500)){
+  if (predicted[i] == labels[2500+i]) {
+    good = good + 1
+  }
+}
+good/2500
+
+```
+
+With principle component analysis and a random forest we get an accuracy of around 50 percent, which is not much worse then Naive Bayes. 
+
+
+### Association Rule Mining
+ 
+We now attempt some association rule mining with a grocery data set.
+
+```{r}
+library(arules)
+grocery = read.transactions('./groceries.txt', sep = ',', format = 'basket', rm.duplicates = 1)
+
+groceryrules <- apriori(grocery,parameter=list(support=.01, confidence=.5, maxlen=4))
+inspect(groceryrules)
+```
+
+We see from our rule mining that carts with vegetables and some dairy product usually include whole milk. We also see that carts with fruits and vegetables usually leads to more vegetables. The support is the minimum fraction that contain the itemsets, the confidence is how often the one itemset appears with another itemset. 
